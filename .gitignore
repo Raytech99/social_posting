@@ -23,6 +23,7 @@ word_timestamps.txt
 # --- Project Specific Directories ---
 # Ignore the entire output directory
 /output_videos/
+/background_videos/
 
 # Uncomment the line below ONLY if you DO NOT want
 # to commit your input background videos to Git.

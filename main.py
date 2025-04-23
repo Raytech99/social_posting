@@ -29,11 +29,12 @@ BACKGROUND_VIDEO_FILENAME = "minecraft_parkour.mp4" # IMPORTANT: Change to your 
 BACKGROUND_VIDEO_PATH = os.path.join(BACKGROUND_VIDEO_DIR, BACKGROUND_VIDEO_FILENAME)
 OUTPUT_VIDEO_FILENAME = "final_story_video.mp4"
 OUTPUT_VIDEO_DIR = "output_videos" # Folder to save final videos
-# Caption Styling (Customize these!)
-CAPTION_FONT = 'Arial-Bold' # Or another font available to MoviePy/ImageMagick
-CAPTION_FONTSIZE = 24
+# Caption Styling (Updated for bold social media style)
+CAPTION_FONT = 'Impact' # Popular social media font; alternatives: 'Arial-Black', 'Helvetica-Bold'
+CAPTION_FONTSIZE = 35 # Much larger text
 CAPTION_COLOR = 'white'
-CAPTION_BG_COLOR = 'rgba(0, 0, 0, 0.5)' # Semi-transparent black background
+CAPTION_STROKE_COLOR = 'black' # Outline for better visibility
+CAPTION_STROKE_WIDTH = 1.5 # Width of the outline
 
 #Generate a script for a story
 def generate_script_ollama(idea, model_name="mistral"): # Or specify a more precise model like "mistral:7b"
@@ -263,9 +264,12 @@ def create_video(background_video_path, audio_path, segments, output_path):
                                 txt_clip = TextClip(
                                     group_text,
                                     fontsize=CAPTION_FONTSIZE,
+                                    font=CAPTION_FONT,
                                     color=CAPTION_COLOR,
-                                    bg_color=CAPTION_BG_COLOR,
-                                    method='caption'
+                                    stroke_color=CAPTION_STROKE_COLOR,
+                                    stroke_width=CAPTION_STROKE_WIDTH,
+                                    method='label',  # 'label' for single line without background
+                                    align='center'   # Center-align the text
                                 )
                                 # Center text both horizontally and vertically
                                 txt_clip = txt_clip.set_position('center').set_start(group_start_time).set_duration(duration)
