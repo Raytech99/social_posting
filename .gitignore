@@ -1,0 +1,36 @@
+# --- Environment Variables ---
+# Never commit your secret keys!
+.env
+
+# --- Virtual Environment ---
+# Created by tools like venv, virtualenv, uv, poetry, etc.
+.venv/
+
+# --- Python ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+
+# --- Project Specific Output/Temporary Files ---
+# Use patterns to ignore all files of these types
+*.mp3
+*.m4a # Temporary audio file from moviepy
+*.mp4
+*.json
+script.txt
+word_timestamps.txt
+
+# --- Project Specific Directories ---
+# Ignore the entire output directory
+/output_videos/
+
+# Uncomment the line below ONLY if you DO NOT want
+# to commit your input background videos to Git.
+# /background_videos/
+
+# --- macOS ---
+.DS_Store
+
+# --- IDEs / Editors ---
+.vscode/
+.idea/
