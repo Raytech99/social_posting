@@ -25,16 +25,20 @@ WHISPER_DEVICE = "cpu" # Use "cpu" for reliability, "mps" might work on M4 Pro b
 
 # --- Video Configuration ---
 BACKGROUND_VIDEO_DIR = "background_videos" # Folder for input videos
-BACKGROUND_VIDEO_FILENAME = "minecraft_parkour.mp4" # IMPORTANT: Change to your video file name
+BACKGROUND_VIDEO_FILENAME = "minecraft_parkour_4.mp4"  # The background video file
 BACKGROUND_VIDEO_PATH = os.path.join(BACKGROUND_VIDEO_DIR, BACKGROUND_VIDEO_FILENAME)
 OUTPUT_VIDEO_FILENAME = "final_story_video.mp4"
 OUTPUT_VIDEO_DIR = "output_videos" # Folder to save final videos
-# Caption Styling (Updated for bold social media style)
-CAPTION_FONT = 'Impact' # Popular social media font; alternatives: 'Arial-Black', 'Helvetica-Bold'
-CAPTION_FONTSIZE = 35 # Much larger text
-CAPTION_COLOR = 'white'
-CAPTION_STROKE_COLOR = 'black' # Outline for better visibility
-CAPTION_STROKE_WIDTH = 1.5 # Width of the outline
+# Caption Styling (Minecraft-style with large white text and black outline)
+CAPTION_FONT = 'Impact'  # Use Impact font for that Minecraft-style blocky appearance
+SINGLE_CAPTION_FONTSIZE = 65
+MULTI_CAPTION_FONTSIZE = 35
+CAPTION_COLOR = 'white'  # White text
+CAPTION_STROKE_COLOR = 'black'  # Black outline
+CAPTION_STROKE_WIDTH = 2.0  # Strong outline
+
+# --- Caption Mode Toggle ---
+ENABLE_WORD_GROUPING = True  # When True, displays words in groups; when False, displays one word at a time
 
 #Generate a script for a story
 def generate_script_ollama(idea, model_name="mistral"): # Or specify a more precise model like "mistral:7b"
@@ -56,7 +60,8 @@ def generate_script_ollama(idea, model_name="mistral"): # Or specify a more prec
                     4.  **Show, Don't Just Tell:** Use specific details, actions, and dialogue snippets to make both the initial premise and the later reveal feel convincing. Include details like timelines or specific objects if relevant.
                     5.  **Engaging Tone:** Write in a slightly informal, potentially gossipy, or "I can't believe this happened" style.
                     6.  **Cliffhanger/Question:** End with an open question for the audience related to the moral dilemma or the aftermath ("AITA for thinking X?", "What would you have done?", "Is he the villain or the victim?").
-                    7.  **Length:** Aim for 300 words.
+                    7.  **Use simple diction and words that are easy to pronounce and understand**
+                    8.  **Length:** Aim for 300 words.
                     """
                  },
                 {
@@ -96,7 +101,7 @@ def generate_audio_openai(script_text, output_path):
                 model="tts-1",
                 voice="echo",
                 input=script_text,
-                speed=1.6  # Speed up the speech (0.25-4.0, default 1.0)
+                speed=1.4  # Speed up the speech (0.25-4.0, default 1.0)
             ) as response:
                 for chunk in response.iter_bytes():
                     file.write(chunk)
@@ -168,16 +173,17 @@ def get_word_timestamps(audio_path):
         print(f"--- Word Timestamp Generation Failed ---")
         return None
 
-# --- Video Creation Function (Improved Captions) ---
+# --- Video Creation Function (Supports both modes) ---
 def create_video(background_video_path, audio_path, segments, output_path):
     """
     Creates the final video by combining background video, audio, and word captions.
-    Groups words together for more natural reading and centers them on screen.
+    Supports both word grouping and one-word-at-a-time modes based on ENABLE_WORD_GROUPING.
     """
     print(f"\n--- Starting Video Generation ---")
     print(f"Using background: {background_video_path}")
     print(f"Using audio: {audio_path}")
     print(f"Saving to: {output_path}")
+    print(f"Caption Mode: {'Word Grouping' if ENABLE_WORD_GROUPING else 'One Word at a Time'}")
 
     # Basic checks
     if not os.path.exists(background_video_path): return False
@@ -209,85 +215,164 @@ def create_video(background_video_path, audio_path, segments, output_path):
         print("Assigning audio to video...")
         video_clip = video_clip.set_audio(audio_clip)
 
-        # Create grouped TextClips (2-3 words at a time)
-        print("Generating caption clips with word grouping...")
-        
-        # Constants for grouping
-        GROUP_SIZE = 3  # Number of words per group
+        # Constants for either mode
+        GROUP_SIZE = 3  # Number of words per group (used only if ENABLE_WORD_GROUPING)
         MIN_DURATION = 0.5  # Minimum duration for any caption (in seconds)
         
         processed_words = 0
         total_words = sum(len(s.get('words', [])) for s in segments)
         textclip_creation_errors = 0
 
-        for segment in segments:
-            if 'words' not in segment: continue
+        if ENABLE_WORD_GROUPING:
+            # --- WORD GROUPING MODE ---
+            print("Generating caption clips with word grouping...")
             
-            # Process each segment's words in groups
-            word_group = []
-            group_start_time = None
-            group_end_time = None
+            for segment in segments:
+                if 'words' not in segment: continue
+                
+                # Process each segment's words in groups
+                word_group = []
+                group_start_time = None
+                group_end_time = None
+                
+                for i, word_info in enumerate(segment['words']):
+                    word_text = word_info.get('text', '').strip()
+                    start_time = word_info.get('start')
+                    end_time = word_info.get('end')
+                    
+                    # Skip words outside the audio duration
+                    if start_time is not None and start_time >= audio_duration: continue
+                    if end_time is not None and end_time > audio_duration: end_time = audio_duration
+                    
+                    # Valid word to add to group
+                    if word_text and start_time is not None and end_time is not None and end_time > start_time:
+                        # First word in group - set the starting time
+                        if len(word_group) == 0:
+                            group_start_time = start_time
+                        
+                        # Add word to group
+                        word_group.append(word_text)
+                        group_end_time = end_time
+                        processed_words += 1
+                        
+                        # Create caption when group is full or segment ends
+                        if len(word_group) >= GROUP_SIZE or i == len(segment['words']) - 1:
+                            # Only create caption if we have words and timing
+                            if word_group and group_start_time is not None and group_end_time is not None:
+                                # Create caption for the word group
+                                group_text = " ".join(word_group)
+                                duration = group_end_time - group_start_time
+                                
+                                # Ensure minimum duration
+                                if duration < MIN_DURATION:
+                                    duration = MIN_DURATION
+                                
+                                try:
+                                    txt_clip = TextClip(
+                                        group_text,
+                                        fontsize=MULTI_CAPTION_FONTSIZE,
+                                        font=CAPTION_FONT,
+                                        color=CAPTION_COLOR,
+                                        stroke_color=CAPTION_STROKE_COLOR,
+                                        stroke_width=CAPTION_STROKE_WIDTH,
+                                        method='label',  # 'label' for single line without background
+                                        align='center'   # Center-align the text
+                                    )
+                                    # Center text both horizontally and vertically
+                                    txt_clip = txt_clip.set_position('center').set_start(group_start_time).set_duration(duration)
+                                    caption_clips.append(txt_clip)
+                                except Exception as e:
+                                    print(f"Failed to create TextClip for '{group_text}'")
+                                    print(f"Error: {e}")
+                                    textclip_creation_errors += 1
+                                    
+                                # Reset for next group
+                                word_group = []
+                                group_start_time = None
+                                
+                    # Print progress periodically
+                    if processed_words % 50 == 0 and processed_words > 0:
+                        print(f"  Processed {processed_words}/{total_words} words...")
+                        
+            print(f"Created {len(caption_clips)} caption groups from {processed_words} words.")
             
-            for i, word_info in enumerate(segment['words']):
+        else:
+            # --- ONE WORD AT A TIME MODE ---
+            print("Generating one-word-at-a-time captions...")
+            
+            # Flatten all words for sequential processing
+            all_words = []
+            for segment in segments:
+                if 'words' in segment:
+                    all_words.extend(segment['words'])
+            
+            # Add a small gap constant to prevent visual overlap
+            GAP_BETWEEN_WORDS = 0.02 # Small gap in seconds
+
+            for i, word_info in enumerate(all_words):
                 word_text = word_info.get('text', '').strip()
                 start_time = word_info.get('start')
                 end_time = word_info.get('end')
                 
-                # Skip words outside the audio duration
-                if start_time is not None and start_time >= audio_duration: continue
-                if end_time is not None and end_time > audio_duration: end_time = audio_duration
+                # Skip invalid words or timing
+                if not word_text or start_time is None or end_time is None: continue
+                if start_time >= audio_duration: continue
+                if end_time > audio_duration: end_time = audio_duration
+                if end_time <= start_time: continue # Ensure duration is positive
+                
+                # --- Improved Duration Calculation --- 
+                # Default duration from whisper
+                calculated_duration = end_time - start_time
+                
+                # Look ahead to the next word's start time
+                next_word_start_time = None
+                if i + 1 < len(all_words):
+                    next_word_info = all_words[i+1]
+                    next_word_start_time = next_word_info.get('start')
 
-                # Valid word to add to group
-                if word_text and start_time is not None and end_time is not None and end_time > start_time:
-                    # First word in group - set the starting time
-                    if len(word_group) == 0:
-                        group_start_time = start_time
+                # If there's a next word, cap duration to end slightly before it starts
+                if next_word_start_time is not None and next_word_start_time > start_time:
+                    max_duration_before_next = next_word_start_time - start_time - GAP_BETWEEN_WORDS
+                    duration = min(calculated_duration, max_duration_before_next)
+                else:
+                    # Last word or issue with next word timing, use calculated duration
+                    duration = calculated_duration
                     
-                    # Add word to group
-                    word_group.append(word_text)
-                    group_end_time = end_time
+                # Ensure minimum duration BUT don't exceed original end time or gap
+                duration = max(duration, MIN_DURATION)
+                # Final check: ensure clip doesn't exceed original end_time (if MIN_DURATION pushed it)
+                duration = min(duration, end_time - start_time)
+                # Ensure duration is still positive after adjustments
+                duration = max(duration, 0.01) 
+
+                try:
+                    # Create text clip for the single word
+                    txt_clip = TextClip(
+                        word_text,
+                        fontsize=SINGLE_CAPTION_FONTSIZE,
+                        font=CAPTION_FONT,
+                        color=CAPTION_COLOR,
+                        stroke_color=CAPTION_STROKE_COLOR,
+                        stroke_width=CAPTION_STROKE_WIDTH,
+                        method='label',  # 'label' for single line without background
+                        align='center'   # Center-align the text
+                    )
+                    
+                    # Center text both horizontally and vertically
+                    txt_clip = txt_clip.set_position('center').set_start(start_time).set_duration(duration)
+                    caption_clips.append(txt_clip)
                     processed_words += 1
+                except Exception as e:
+                    print(f"Failed to create TextClip for '{word_text}'")
+                    print(f"Error: {e}")
+                    textclip_creation_errors += 1
                     
-                    # Create caption when group is full or segment ends
-                    if len(word_group) >= GROUP_SIZE or i == len(segment['words']) - 1:
-                        # Only create caption if we have words and timing
-                        if word_group and group_start_time is not None and group_end_time is not None:
-                            # Create caption for the word group
-                            group_text = " ".join(word_group)
-                            duration = group_end_time - group_start_time
-                            
-                            # Ensure minimum duration
-                            if duration < MIN_DURATION:
-                                duration = MIN_DURATION
-                            
-                            try:
-                                txt_clip = TextClip(
-                                    group_text,
-                                    fontsize=CAPTION_FONTSIZE,
-                                    font=CAPTION_FONT,
-                                    color=CAPTION_COLOR,
-                                    stroke_color=CAPTION_STROKE_COLOR,
-                                    stroke_width=CAPTION_STROKE_WIDTH,
-                                    method='label',  # 'label' for single line without background
-                                    align='center'   # Center-align the text
-                                )
-                                # Center text both horizontally and vertically
-                                txt_clip = txt_clip.set_position('center').set_start(group_start_time).set_duration(duration)
-                                caption_clips.append(txt_clip)
-                            except Exception as e:
-                                print(f"Failed to create TextClip for '{group_text}'")
-                                print(f"Error: {e}")
-                                textclip_creation_errors += 1
-                                
-                            # Reset for next group
-                            word_group = []
-                            group_start_time = None
-
-                # Print progress periodically
-                if processed_words % 50 == 0 and processed_words > 0:
+                # Print progress periodically 
+                if processed_words % 25 == 0 and processed_words > 0:
                     print(f"  Processed {processed_words}/{total_words} words...")
+                    
+            print(f"Created {len(caption_clips)} individual word captions from {processed_words} words.")
 
-        print(f"Created {len(caption_clips)} caption groups from {processed_words} words.")
         if textclip_creation_errors > 0: print(f"Encountered {textclip_creation_errors} errors during TextClip creation.")
 
         # Composite clips
@@ -336,7 +421,7 @@ if __name__ == "__main__":
 
     # --- Step 1: Generate Script ---
     #story_idea = input("Enter your story idea: ")
-    story_idea = "My neighbor keeps leaving creepy, anonymous 'gifts' on my doorstep late at night."# Example idea
+    story_idea = "My sibling, who always struggled financially, suddenly started buying expensive designer items and taking lavish trips right after our estranged, wealthy uncle died, but they claim they inherited nothing."# Example idea
     generated_script = None
 
     print(f"\n--- Step 1: Generating Script ---")
